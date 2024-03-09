@@ -90,6 +90,8 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
 end
 
 bisect_command = raw"""
+ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
+
 using Pkg
 Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
 Pkg.add("BenchmarkTools", io=devnull)
@@ -98,9 +100,18 @@ using BaseBenchmarks, BenchmarkTools
 #BaseBenchmarks.load!("simd")
 #results = BaseBenchmarks.SUITE[@tagged "Cartesian" && "conditional_loop!" && 2 && 31 && Int32] |> run |> minimum |> BenchmarkTools.leaves
 
-BaseBenchmarks.load!("array")
-results = BaseBenchmarks.SUITE[@tagged "sumelt_boundscheck" && "BaseBenchmarks.ArrayBenchmarks.ArrayLF{Int32, 2}"] |> run |> minimum |> BenchmarkTools.leaves
+#BaseBenchmarks.load!("array")
+#results = BaseBenchmarks.SUITE[@tagged "sumelt_boundscheck" && "BaseBenchmarks.ArrayBenchmarks.ArrayLF{Int32, 2}"] |> run |> minimum |> BenchmarkTools.leaves
 
-results[1][2].time
+#BaseBenchmarks.load!("collection")
+#bench = BaseBenchmarks.SUITE[@tagged "queries & updates" && "Vector" && "Any" && "setindex!"]
+#bench = BaseBenchmarks.SUITE[@tagged "queries & updates" && "IdDict" && "Any" && "setindex!" && "new"]
+
+#results = bench |> run |> minimum |> BenchmarkTools.leaves
+#results[1][2].time
+
+BaseBenchmarks.load!("scalar")
+bench = BaseBenchmarks.SUITE["scalar"]["arithmetic"]["div", "Complex{UInt64}", "Complex{Int64}"]
+minimum(run(bench)).time
 """
-bisect_perf(bisect_command, "e280387cf0811de7541220d8772281f3a86f4c6e", "79de5f3caa4b013f089bd668ea7125c3ab9f39f2")
+bisect_perf(bisect_command, "f2d1276be8a1d4831addb62376eb19550494d3d1", "5488b8139f3d6ca784b9f837049f815cfcb78be5")
