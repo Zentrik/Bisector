@@ -7,8 +7,10 @@ function get_binaryurl(sha)
     r = HTTP.get(url)
     html = String(r.body)
 
-    build_url = "https://buildkite.com/" * match(r"julialang/julia-master/builds/\d+", html).match * "/waterfall"
     build_num = match(r"julialang/julia-master/builds/(\d+)", html).captures[1]
+
+    # Could get job using https://buildkite.com/julialang/julia-master/builds/31230.json instead
+    build_url = "https://buildkite.com/" * match(r"julialang/julia-master/builds/\d+", html).match * "/waterfall"
     r = HTTP.get(build_url)
     html = String(r.body)
 
@@ -92,26 +94,12 @@ end
 bisect_command = raw"""
 ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
 
-using Pkg
-Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
-Pkg.add("BenchmarkTools", io=devnull)
-using BaseBenchmarks, BenchmarkTools
-
-#BaseBenchmarks.load!("simd")
-#results = BaseBenchmarks.SUITE[@tagged "Cartesian" && "conditional_loop!" && 2 && 31 && Int32] |> run |> minimum |> BenchmarkTools.leaves
-
-#BaseBenchmarks.load!("array")
-#results = BaseBenchmarks.SUITE[@tagged "sumelt_boundscheck" && "BaseBenchmarks.ArrayBenchmarks.ArrayLF{Int32, 2}"] |> run |> minimum |> BenchmarkTools.leaves
-
-#BaseBenchmarks.load!("collection")
-#bench = BaseBenchmarks.SUITE[@tagged "queries & updates" && "Vector" && "Any" && "setindex!"]
-#bench = BaseBenchmarks.SUITE[@tagged "queries & updates" && "IdDict" && "Any" && "setindex!" && "new"]
-
-#results = bench |> run |> minimum |> BenchmarkTools.leaves
-#results[1][2].time
-
-BaseBenchmarks.load!("scalar")
-bench = BaseBenchmarks.SUITE["scalar"]["arithmetic"]["div", "Complex{UInt64}", "Complex{Int64}"]
-minimum(run(bench)).time
+using Pkg, Test
+Pkg.add("Chairmarks")
+t = @timed try
+    Pkg.test("Chairmarks")
+catch
+end
+t.time
 """
-bisect_perf(bisect_command, "f2d1276be8a1d4831addb62376eb19550494d3d1", "5488b8139f3d6ca784b9f837049f815cfcb78be5")
+bisect_perf(bisect_command, "427da5c38ee08ab8477f2cd706c605d2d0bcb84c", "fb71a5d2fb6ed8348e3b8ff7b54f18965b9d8d7b")
