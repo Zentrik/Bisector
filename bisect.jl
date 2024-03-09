@@ -1,62 +1,4 @@
-using Downloads, CodecZlib, Tar, LibGit2
-
-function bisect(bisect_command, start_sha, end_sha, os="linux", arch="x86_64")
-    dir = mktempdir()
-    cd(dir)
-    repo = LibGit2.clone("https://github.com/JuliaLang/julia.git", dir)
-
-    # Get the start and end commit objects
-    start_commit = LibGit2.GitCommit(repo, start_sha)
-    end_commit = LibGit2.GitCommit(repo, end_sha)
-
-    # Get the commit range
-    commit_range::Vector{String} = LibGit2.with(LibGit2.GitRevWalker(repo)) do walker
-        LibGit2.map((oid, repo)->string(oid), walker; range=string(LibGit2.GitHash(start_commit))*".."*string(LibGit2.GitHash(end_commit)), by=LibGit2.Consts.SORT_REVERSE)
-    end
-
-    # Test script, makes it easy to run bisect command
-    file = mktemp()
-    write(file[1], bisect_command)
-
-    left = 1
-    right = length(commit_range)
-    i = 0
-    while left < right
-        i = (left + right) ÷ 2
-        commit = commit_range[i]
-
-        version_full = read(`contrib/commit-name.sh $commit`, String)
-        # version_full = run(`powershell -Command $dir/contrib/commit-name.sh $commit`)
-        major_minor_version = split(version_full, '.')[1:2] |> x->join(x, '.')
-
-        binary_url = "https://julialangnightlies-s3.julialang.org/bin/$os/$arch/$major_minor_version/julia-$(commit[1:10])-$os-$arch.tar.gz"
-        download_path = Downloads.download(binary_url)
-
-        result = mktempdir() do binary_dir
-            # extract
-            open(download_path) do io
-                stream = GzipDecompressorStream(io)
-                Tar.extract(stream, binary_dir)
-            end
-
-            run(Cmd(
-                `$binary_dir/julia-$(commit[1:10])/bin/julia --project=$binary_dir -E include\(\"$(file[1])\"\)`,
-                ignorestatus = true
-            ))
-        end
-
-        println("Commit $commit" * (result.exitcode == 0 ? "suceeded" : "failed"))
-
-        if result.exitcode == 0
-            left = i + 1
-        else
-            right = i
-        end
-    end
-
-    return left, commit_range[left]
-end
-
+using Downloads, CodecZlib, Tar, GitHub
 using HTTP, JSON3
 
 function get_binaryurl(sha)
@@ -75,24 +17,10 @@ function get_binaryurl(sha)
 
     artifacts_url = "https://buildkite.com/organizations/julialang/pipelines/julia-master/builds/$build_num/jobs/$job/artifacts"
     return "https://buildkite.com/" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
-
-    # w = Window()
-    # Blink.AtomShell.@dot w loadURL($job_url, Dict(userAgent=>"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.19582"))
-    # # loadurl(w, job_url)
-    # # sleep(1)
-    # @js w document.getElementById("job-018d3d5b-2238-43eb-9d94-f4553ba0f4f5").querySelectorAll(".btn")[1].click()
-    # html = @js w document.querySelector("body").innerHTML
-
-    # match(Regex("""href="(.+)" title="julia-$(sha[1:10])-$os-$arch.tar.gz"""), html)
 end
 
-function run_commit(file, commit, os, arch)
-    @assert os == "linux"
-
-    version_full = read(`contrib/commit-name.sh $commit`, String)
-    major_minor_version = split(version_full, '.')[1:2] |> x->join(x, '.')
-
-    binary_url = "https://julialangnightlies-s3.julialang.org/bin/$os/$arch/$major_minor_version/julia-$(commit[1:10])-$os-$arch.tar.gz"
+function run_commit(file, commit)
+    binary_url = get_binaryurl(commit)
     download_path = Downloads.download(binary_url)
 
     result = mktempdir() do binary_dir
@@ -112,35 +40,20 @@ function run_commit(file, commit, os, arch)
     parse(Float64, result)
 end
 
-function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, os="linux", arch="x86_64", julia_repo=nothing)
-    repo = nothing
-    if isnothing(julia_repo)
-        dir = mktempdir()
-        LibGit2.clone("https://github.com/JuliaLang/julia.git", dir)
-        julia_repo = dir
-    end
-    repo = LibGit2.GitRepo(julia_repo)
-    cd(julia_repo)
-
-    # Get the start and end commit objects
-    start_commit = LibGit2.GitCommit(repo, start_sha)
-    end_commit = LibGit2.GitCommit(repo, end_sha)
-
-    # Get the commit range
-    commit_range::Vector{String} = LibGit2.with(LibGit2.GitRevWalker(repo)) do walker
-        LibGit2.map((oid, repo)->string(oid), walker; range=string(LibGit2.GitHash(start_commit))*".."*string(LibGit2.GitHash(end_commit)), by=LibGit2.Consts.SORT_REVERSE)
-    end
-    pushfirst!(commit_range, start_sha)
+function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
+    julia_repo = repo(Repo("JuliaLang/julia"))
+    commit_range = map(x->x.sha, compare(julia_repo, start_sha, end_sha).commits)
+    push!(commit_range, start_sha)
 
     # Test script, makes it easy to run bisect command
     file = mktemp()
     write(file[1], bisect_command)
 
-    original_time = run_commit(file, start_sha, os, arch)
-    println("Starting commit took $original_time")
+    original_time = run_commit(file, start_sha)
+    printstyled("Starting commit took $original_time\n", color=:red)
 
-    end_time = run_commit(file, end_sha, os, arch)
-    println("End commit took $end_time")
+    end_time = run_commit(file, end_sha)
+    printstyled("End commit took $end_time\n", color=:red)
 
     if end_time <= factor * original_time
         return
@@ -156,7 +69,7 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, os="linux",
         commit = commit_range[i]
 
         result = try
-            run_commit(file, commit, os, arch)
+            run_commit(file, commit)
         catch
             push!(failed_commits, commit)
             deleteat!(commit_range, i)
@@ -164,7 +77,7 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, os="linux",
             continue
         end
 
-        println("Commit $commit " * ((result <= factor * original_time) ? "succeeded" : "failed") * " in $result")
+        printstyled("Commit $commit " * ((result <= factor * original_time) ? "succeeded" : "failed") * " in $result\n", color=:red)
 
         if result <= factor * original_time
             left = i + 1
@@ -177,10 +90,9 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, os="linux",
 end
 
 bisect_command = raw"""
-redirect_stdout(open("nul", "w"))
 using Pkg
-Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl")
-Pkg.add("BenchmarkTools")
+Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+Pkg.add("BenchmarkTools", io=devnull)
 using BaseBenchmarks, BenchmarkTools
 
 #BaseBenchmarks.load!("simd")
@@ -191,4 +103,4 @@ results = BaseBenchmarks.SUITE[@tagged "sumelt_boundscheck" && "BaseBenchmarks.A
 
 results[1][2].time
 """
-bisect_perf(bisect_command, "e280387cf0811de7541220d8772281f3a86f4c6e", "79de5f3caa4b013f089bd668ea7125c3ab9f39f2"; julia_repo=homedir()*"/Documents/Code/julia-master")
+bisect_perf(bisect_command, "e280387cf0811de7541220d8772281f3a86f4c6e", "79de5f3caa4b013f089bd668ea7125c3ab9f39f2")
