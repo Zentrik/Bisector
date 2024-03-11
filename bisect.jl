@@ -33,7 +33,7 @@ function run_commit(file, commit)
         end
 
         read(Cmd(
-            `$binary_dir/julia-$(commit[1:10])/bin/julia --project=$binary_dir -E include\(\"$(file[1])\"\)`,
+            `$binary_dir/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$binary_dir -E include\(\"$(file[1])\"\)`,
             ignorestatus=true
             ), String
         )
@@ -43,8 +43,7 @@ function run_commit(file, commit)
 end
 
 function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
-    julia_repo = repo(Repo("JuliaLang/julia"))
-    commit_range = map(x->x.sha, compare(julia_repo, start_sha, end_sha).commits)
+    commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
     push!(commit_range, start_sha)
 
     # Test script, makes it easy to run bisect command
@@ -94,12 +93,13 @@ end
 bisect_command = raw"""
 ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
 
-using Pkg, Test
-Pkg.add("Chairmarks")
-t = @timed try
-    Pkg.test("Chairmarks")
-catch
-end
-t.time
+using Pkg
+Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+using BaseBenchmarks
+
+BaseBenchmarks.load!("inference")
+res = run(BaseBenchmarks.SUITE[["inference", "allinference", "Base.init_stdio(::Ptr{Cvoid})"]])
+
+minimum(res).time
 """
-bisect_perf(bisect_command, "427da5c38ee08ab8477f2cd706c605d2d0bcb84c", "fb71a5d2fb6ed8348e3b8ff7b54f18965b9d8d7b")
+bisect_perf(bisect_command, "f66fd47f2daa9a7139f72617d74bbd1efaafd766", "5c7d24493ebab184d4517ca556314524f4fcb47f"; factor=1.2)
