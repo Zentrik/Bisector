@@ -44,7 +44,7 @@ end
 
 function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
     commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
-    push!(commit_range, start_sha)
+    pushfirst!(commit_range, start_sha)
 
     # Test script, makes it easy to run bisect command
     file = mktemp()
