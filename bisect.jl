@@ -69,13 +69,17 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
         i = (left + right) ÷ 2
         commit = commit_range[i]
 
-        result = try
-            run_commit(file, commit)
-        catch
-            push!(failed_commits, commit)
-            deleteat!(commit_range, i)
-            right = right - 1
-            continue
+        result = if commit == end_sha
+            end_time
+        else
+            try
+                run_commit(file, commit)
+            catch
+                push!(failed_commits, commit)
+                deleteat!(commit_range, i)
+                right = right - 1
+                continue
+            end
         end
 
         printstyled("Commit $commit " * ((result <= factor * original_time) ? "succeeded" : "failed") * " in $result\n", color=:red)
