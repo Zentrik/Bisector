@@ -7,18 +7,15 @@ function get_binaryurl(sha)
     r = HTTP.get(url)
     html = String(r.body)
 
-    build_num = match(r"julialang/julia-master/builds/(\d+)", html).captures[1]
+    build_num = match(r"julialang/julia-\w*/builds/(\d+)", html).captures[1]
 
-    # Could get job using https://buildkite.com/julialang/julia-master/builds/31230.json instead
-    build_url = "https://buildkite.com/" * match(r"julialang/julia-master/builds/\d+", html).match * "/waterfall"
-    r = HTTP.get(build_url)
-    html = String(r.body)
+    details_url = "https://buildkite.com/" * match(r"julialang/julia-\w*/builds/\d+", html).match * ".json"
+    details_json = HTTP.get(details_url).body |> JSON3.read
+    idx = findfirst(x->x.name == ":linux: build x86_64-linux-gnu", details_json.jobs)
 
-    job_url = match(Regex("""href="(.+)"><span title=":linux: build x86_64-linux-gnu">"""), html).captures[1]
-    job = split(job_url, '#')[2]
+    artifacts_url = "https://buildkite.com/" * details_json.jobs[idx].base_path * "/artifacts"
 
-    artifacts_url = "https://buildkite.com/organizations/julialang/pipelines/julia-master/builds/$build_num/jobs/$job/artifacts"
-    return "https://buildkite.com/" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
+    return "https://buildkite.com" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
 end
 
 function run_commit(file, commit)
