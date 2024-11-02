@@ -1,8 +1,10 @@
+using Pkg
+Pkg.activate(@__DIR__)
 using Downloads, CodecZlib, Tar, GitHub
 using HTTP, JSON3
 
-function get_binaryurl(sha)
-    url = "https://buildkite.com/julialang/julia-master/builds?commit=$sha"
+function get_binaryurl(sha, branch)
+    url = "https://buildkite.com/julialang/julia-$branch/builds?commit=$sha"
 
     r = HTTP.get(url)
     html = String(r.body)
@@ -18,28 +20,52 @@ function get_binaryurl(sha)
     return "https://buildkite.com" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
 end
 
-function run_commit(file, commit)
-    binary_url = get_binaryurl(commit)
-    download_path = Downloads.download(binary_url)
+function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Code/Bisector/cached_binaries")
+    result = if !isnothing(download_cache)
+        if "julia-$(commit[1:10])" ∉ readdir(download_cache)
+            binary_url = get_binaryurl(commit, branch)
+            download_path = Downloads.download(binary_url)
 
-    result = mktempdir() do binary_dir
-        # extract
-        open(download_path) do io
-            stream = GzipDecompressorStream(io)
-            Tar.extract(stream, binary_dir)
+            open(download_path) do io
+                stream = GzipDecompressorStream(io)
+                Tar.extract(stream, joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
+                mv(joinpath(download_cache, "tmp-julia-$(commit[1:10])", "julia-$(commit[1:10])"), joinpath(download_cache, "julia-$(commit[1:10])")) # Tar doesn't let me extract to a non-empty directory
+                rm(joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
+            end
         end
 
-        read(Cmd(
-            `$binary_dir/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$binary_dir -E include\(\"$(file[1])\"\)`,
-            ignorestatus=true
-            ), String
-        )
+        @time x = mktempdir() do project_dir
+            read(Cmd(
+                `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$download_cache -E include\(\"$(file[1])\"\)`,
+                # `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$project_dir -E include\(\"$(file[1])\"\)`,
+                ignorestatus=true
+                ), String
+            )
+        end
+        x
+    else
+        binary_url = get_binaryurl(commit, branch)
+        download_path = Downloads.download(binary_url)
+
+        mktempdir() do binary_dir
+            # extract
+            open(download_path) do io
+                stream = GzipDecompressorStream(io)
+                Tar.extract(stream, binary_dir)
+            end
+
+            read(Cmd(
+                `$binary_dir/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$binary_dir -E include\(\"$(file[1])\"\)`,
+                ignorestatus=true
+                ), String
+            )
+        end
     end
 
     parse(Float64, result)
 end
 
-function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
+function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, branch="master")
     commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
     pushfirst!(commit_range, start_sha)
 
@@ -47,11 +73,11 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
     file = mktemp()
     write(file[1], bisect_command)
 
-    original_time = run_commit(file, start_sha)
-    printstyled("Starting commit took $original_time\n", color=:red)
+    original_time = run_commit(file, start_sha, branch)
+    printstyled("Starting commit took $(original_time)ns\n", color=:red)
 
-    end_time = run_commit(file, end_sha)
-    printstyled("End commit took $end_time\n", color=:red)
+    end_time = run_commit(file, end_sha, branch)
+    printstyled("End commit took $(end_time)ns\n", color=:red)
 
     if end_time <= factor * original_time
         return
@@ -70,8 +96,9 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
             end_time
         else
             try
-                run_commit(file, commit)
-            catch
+                run_commit(file, commit, branch)
+            catch err
+                display(err)
                 push!(failed_commits, commit)
                 deleteat!(commit_range, i)
                 right = right - 1
@@ -79,7 +106,7 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5)
             end
         end
 
-        printstyled("Commit $commit " * ((result <= factor * original_time) ? "succeeded" : "failed") * " in $result\n", color=:red)
+        printstyled("Commit $commit " * ((result <= factor * original_time) ? "succeeded" : "failed") * " in $(result)ns\n", color=:red)
 
         if result <= factor * original_time
             left = i + 1
@@ -95,12 +122,13 @@ bisect_command = raw"""
 ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
 
 using Pkg
+Pkg.update(; level=Pkg.UPLEVEL_FIXED)
 Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
-using BaseBenchmarks
 
-BaseBenchmarks.load!("inference")
-res = run(BaseBenchmarks.SUITE[["inference", "allinference", "Base.init_stdio(::Ptr{Cvoid})"]])
+using BaseBenchmarks
+BaseBenchmarks.load!("scalar")
+res = run(BaseBenchmarks.SUITE[["scalar", "arithmetic", ("div", "BigFloat", "Complex{UInt64}")]])
 
 minimum(res).time
 """
-bisect_perf(bisect_command, "f66fd47f2daa9a7139f72617d74bbd1efaafd766", "5c7d24493ebab184d4517ca556314524f4fcb47f"; factor=1.2)
+bisect_perf(bisect_command, "e4c8d4f7976162dcf5eebc15d93d2408cb6d0666", "441bcd05feb3cbb325bc169f6e9e9d1a989f5f9f"; factor=1.1) |> println
