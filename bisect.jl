@@ -3,15 +3,19 @@ Pkg.activate(@__DIR__)
 using Downloads, CodecZlib, Tar, GitHub
 using HTTP, JSON3
 
-function get_binaryurl(sha, branch)
-    url = "https://buildkite.com/julialang/julia-$branch/builds?commit=$sha"
+function get_binaryurl(sha, buildkite_pipeline)
+    url = "https://buildkite.com/julialang/$buildkite_pipeline/builds?commit=$sha"
 
     r = HTTP.get(url)
     html = String(r.body)
 
-    build_num = match(r"julialang/julia-\w*/builds/(\d+)", html).captures[1]
+    try
+        build_num = match(r"julialang/" * buildkite_pipeline * r"/builds/(\d+)", html).captures[1]
+    catch
+        error("Could not find build number for commit $sha for $url")
+    end
 
-    details_url = "https://buildkite.com/" * match(r"julialang/julia-\w*/builds/\d+", html).match * ".json"
+    details_url = "https://buildkite.com/" * match(r"julialang/" * buildkite_pipeline * r"/builds/\d+", html).match * ".json"
     details_json = HTTP.get(details_url).body |> JSON3.read
     idx = findfirst(x->x.name == ":linux: build x86_64-linux-gnu", details_json.jobs)
 
@@ -20,19 +24,19 @@ function get_binaryurl(sha, branch)
     return "https://buildkite.com" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
 end
 
-function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Code/Bisector/cached_binaries")
+function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/Documents/Code/Bisector/cached_binaries")
     result = if !isnothing(download_cache)
         if !isdir(download_cache)
             mkpath(download_cache)
         end
         if "julia-$(commit[1:10])" ∉ readdir(download_cache)
-            binary_url = get_binaryurl(commit, branch)
+            binary_url = get_binaryurl(commit, buildkite_pipeline)
             download_path = Downloads.download(binary_url)
 
             open(download_path) do io
                 stream = GzipDecompressorStream(io)
                 Tar.extract(stream, joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
-                dir = readdir(joinpath(download_cache, "tmp-julia-$(commit[1:10])"), join=True)[1]
+                dir = readdir(joinpath(download_cache, "tmp-julia-$(commit[1:10])"), join=true)[1]
                 mv(dir, joinpath(download_cache, "julia-$(commit[1:10])")) # Tar doesn't let me extract to a non-empty directory
                 rm(joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
             end
@@ -48,7 +52,7 @@ function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Co
         end
         x
     else
-        binary_url = get_binaryurl(commit, branch)
+        binary_url = get_binaryurl(commit, buildkite_pipeline)
         download_path = Downloads.download(binary_url)
 
         mktempdir() do binary_dir
@@ -69,7 +73,7 @@ function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Co
     parse(Float64, result)
 end
 
-function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, branch="master")
+function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_pipeline="julia-master")
     commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
     pushfirst!(commit_range, start_sha)
 
@@ -77,10 +81,10 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, branch="mas
     file = mktemp()
     write(file[1], bisect_command)
 
-    original_time = run_commit(file, start_sha, branch)
+    original_time = run_commit(file, start_sha, buildkite_pipeline)
     printstyled("Starting commit took $(original_time)ns\n", color=:red)
 
-    end_time = run_commit(file, end_sha, branch)
+    end_time = run_commit(file, end_sha, buildkite_pipeline)
     printstyled("End commit took $(end_time)ns\n", color=:red)
 
     if end_time <= factor * original_time
@@ -100,9 +104,13 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, branch="mas
             end_time
         else
             try
-                run_commit(file, commit, branch)
+                run_commit(file, commit, buildkite_pipeline)
             catch err
-                display(err)
+                if err isa InterruptException
+                    rethrow()
+                end
+                show(err)
+                println()
                 push!(failed_commits, commit)
                 deleteat!(commit_range, i)
                 right = right - 1
@@ -135,4 +143,5 @@ start_time = time()
 a * a
 time() - start_time
 """
-bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2) |> println
+# bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2, buildkite_pipeline="julia-release-1-dot-11") |> println
+bisect_perf(bisect_command, "924dc170ce12ce831bd31656cb08e79fb2920617", "8c2bcf67e03f13771841605f5289dc56eb46932e"; factor=2) |> println
