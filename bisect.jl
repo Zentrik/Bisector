@@ -22,6 +22,9 @@ end
 
 function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Code/Bisector/cached_binaries")
     result = if !isnothing(download_cache)
+        if !isdir(download_cache)
+            mkpath(download_cache)
+        end
         if "julia-$(commit[1:10])" ∉ readdir(download_cache)
             binary_url = get_binaryurl(commit, branch)
             download_path = Downloads.download(binary_url)
@@ -29,7 +32,8 @@ function run_commit(file, commit, branch; download_cache="/home/rag/Documents/Co
             open(download_path) do io
                 stream = GzipDecompressorStream(io)
                 Tar.extract(stream, joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
-                mv(joinpath(download_cache, "tmp-julia-$(commit[1:10])", "julia-$(commit[1:10])"), joinpath(download_cache, "julia-$(commit[1:10])")) # Tar doesn't let me extract to a non-empty directory
+                dir = readdir(joinpath(download_cache, "tmp-julia-$(commit[1:10])"), join=True)[1]
+                mv(dir, joinpath(download_cache, "julia-$(commit[1:10])")) # Tar doesn't let me extract to a non-empty directory
                 rm(joinpath(download_cache, "tmp-julia-$(commit[1:10])"))
             end
         end
@@ -125,10 +129,10 @@ ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
 # Pkg.update(; level=Pkg.UPLEVEL_FIXED)
 # Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
 
-using BaseBenchmarks
-BaseBenchmarks.load!("inference")
-res = run(BaseBenchmarks.SUITE[["inference", "allinference", "Base.init_stdio(::Ptr{Cvoid})"]])
-
-minimum(res).allocs
+a = BitMatrix(undef, (1000, 1000));
+a * a
+start_time = time()
+a * a
+time() - start_time
 """
-bisect_perf(bisect_command, "2cdfe062952c3a1168da7545a10bfa0ec205b4db", "9dbdeb4fb323dfc78fde96a82bbb8fdefeb61a70"; factor=1.1) |> println
+bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2) |> println
