@@ -119,16 +119,16 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, branch="mas
 end
 
 bisect_command = raw"""
-ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
+ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
 
-using Pkg
-Pkg.update(; level=Pkg.UPLEVEL_FIXED)
-Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+# using Pkg
+# Pkg.update(; level=Pkg.UPLEVEL_FIXED)
+# Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
 
 using BaseBenchmarks
-BaseBenchmarks.load!("scalar")
-res = run(BaseBenchmarks.SUITE[["scalar", "arithmetic", ("div", "BigFloat", "Complex{UInt64}")]])
+BaseBenchmarks.load!("inference")
+res = run(BaseBenchmarks.SUITE[["inference", "allinference", "Base.init_stdio(::Ptr{Cvoid})"]])
 
-minimum(res).time
+minimum(res).allocs
 """
-bisect_perf(bisect_command, "e4c8d4f7976162dcf5eebc15d93d2408cb6d0666", "441bcd05feb3cbb325bc169f6e9e9d1a989f5f9f"; factor=1.1) |> println
+bisect_perf(bisect_command, "2cdfe062952c3a1168da7545a10bfa0ec205b4db", "9dbdeb4fb323dfc78fde96a82bbb8fdefeb61a70"; factor=1.1) |> println
