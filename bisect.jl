@@ -127,7 +127,7 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_p
         end
     end
 
-    return commit_range[left], failed_commits
+    return commit_range[left], "https://github.com/JuliaLang/julia/commit/$(commit_range[left])", failed_commits
 end
 
 bisect_command = raw"""
