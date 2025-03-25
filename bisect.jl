@@ -44,8 +44,7 @@ function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/
 
         @time x = mktempdir() do project_dir
             read(Cmd(
-                `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$download_cache -E include\(\"$(file[1])\"\)`,
-                # `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$project_dir -E include\(\"$(file[1])\"\)`,
+                `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$project_dir -E include\(\"$(file[1])\"\)`,
                 ignorestatus=true
                 ), String
             )
