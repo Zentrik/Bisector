@@ -130,17 +130,23 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_p
 end
 
 bisect_command = raw"""
-ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
+ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
 
-# using Pkg
-# Pkg.update(; level=Pkg.UPLEVEL_FIXED)
-# Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+using Pkg
+# Pkg.instantiate()
+Pkg.update(; level=Pkg.UPLEVEL_FIXED)
+Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+Pkg.add("PrecompileTools", io=devnull)
+Pkg.add("Preferences", io=devnull)
 
-a = BitMatrix(undef, (1000, 1000));
-a * a
-start_time = time()
-a * a
-time() - start_time
+using PrecompileTools, Preferences
+set_preferences!(PrecompileTools, "precompile_workloads" => false; force=true)
+
+using BaseBenchmarks
+BaseBenchmarks.load!("array")
+res = run(BaseBenchmarks.SUITE[["array", "index", ("sumelt", "BaseBenchmarks.ArrayBenchmarks.ArrayLS{Float32, 2}")]])
+
+minimum(res).time
 """
 # bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2, buildkite_pipeline="julia-release-1-dot-11") |> println
-bisect_perf(bisect_command, "924dc170ce12ce831bd31656cb08e79fb2920617", "8c2bcf67e03f13771841605f5289dc56eb46932e"; factor=2) |> println
+bisect_perf(bisect_command, "5d6d757c7318de20370eee8941edd9b74291918b", "3d6289347676d455e145a94e9965beb685d04d7d"; factor=1.5) |> println
