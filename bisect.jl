@@ -134,19 +134,20 @@ ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
 
 using Pkg
 # Pkg.instantiate()
-Pkg.update(; level=Pkg.UPLEVEL_FIXED)
-Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+# Pkg.update(; level=Pkg.UPLEVEL_FIXED)
 Pkg.add("PrecompileTools", io=devnull)
 Pkg.add("Preferences", io=devnull)
 
 using PrecompileTools, Preferences
 set_preferences!(PrecompileTools, "precompile_workloads" => false; force=true)
 
+Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
+
 using BaseBenchmarks
 BaseBenchmarks.load!("array")
-res = run(BaseBenchmarks.SUITE[["array", "index", ("sumelt", "BaseBenchmarks.ArrayBenchmarks.ArrayLS{Float32, 2}")]])
+res = run(BaseBenchmarks.SUITE[["array", "index", ("sumvector_view", "SubArray{Int32, 2, Base.ReshapedArray{Int32, 2, SubArray{Int32, 3, Array{Int32, 3}, Tuple{Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}}, true}, Tuple{}}, Tuple{Base.Slice{Base.OneTo{Int64}}, UnitRange{Int64}}, true}")]])
 
 minimum(res).time
 """
 # bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2, buildkite_pipeline="julia-release-1-dot-11") |> println
-bisect_perf(bisect_command, "5d6d757c7318de20370eee8941edd9b74291918b", "3d6289347676d455e145a94e9965beb685d04d7d"; factor=1.5) |> println
+bisect_perf(bisect_command, "6d78a4ae91078cea43470f8cd6d895e0c9b3d5e7", "748775b5689deaa4acac7929e0a31a80d1c564f4"; factor=1.4) |> println
