@@ -44,8 +44,8 @@ function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/
 
         @time x = mktempdir() do project_dir
             read(Cmd(
-                `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$project_dir -E include\(\"$(file[1])\"\)`,
-                ignorestatus=true
+                `$download_cache/julia-$(commit[1:10])/bin/julia --startup-file=no --compiled-modules=existing --project=$project_dir -E include\(\"$(file[1])\"\)`,
+                ignorestatus=true,
                 ), String
             )
         end
@@ -62,7 +62,7 @@ function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/
             end
 
             read(Cmd(
-                `$binary_dir/julia-$(commit[1:10])/bin/julia --startup-file=no --project=$binary_dir -E include\(\"$(file[1])\"\)`,
+                `$binary_dir/julia-$(commit[1:10])/bin/julia --startup-file=no --compiled-modules=existing --project=$binary_dir -E include\(\"$(file[1])\"\)`,
                 ignorestatus=true
                 ), String
             )
@@ -130,17 +130,7 @@ function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_p
 end
 
 bisect_command = raw"""
-ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
-
 using Pkg
-# Pkg.instantiate()
-# Pkg.update(; level=Pkg.UPLEVEL_FIXED)
-Pkg.add("PrecompileTools", io=devnull)
-Pkg.add("Preferences", io=devnull)
-
-using PrecompileTools, Preferences
-set_preferences!(PrecompileTools, "precompile_workloads" => false; force=true)
-
 Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
 
 using BaseBenchmarks
