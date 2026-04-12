@@ -16,7 +16,6 @@ function get_binaryurl(sha, buildkite_pipeline)
     end
 
     details_url = "https://buildkite.com/" * match(r"julialang/" * buildkite_pipeline * r"/builds/\d+", html).match * "/data/jobs?include_retried_jobs=true&paginate=false"
-    print("Getting details from $details_url\n")
     details_json = HTTP.get(details_url).body |> JSON3.read
     idx = findfirst(x->x.name == ":linux: build x86_64-linux-gnu", details_json.records)
 
