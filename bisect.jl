@@ -15,11 +15,12 @@ function get_binaryurl(sha, buildkite_pipeline)
         error("Could not find build number for commit $sha for $url")
     end
 
-    details_url = "https://buildkite.com/" * match(r"julialang/" * buildkite_pipeline * r"/builds/\d+", html).match * ".json"
+    details_url = "https://buildkite.com/" * match(r"julialang/" * buildkite_pipeline * r"/builds/\d+", html).match * "/data/jobs?include_retried_jobs=true&paginate=false"
+    print("Getting details from $details_url\n")
     details_json = HTTP.get(details_url).body |> JSON3.read
-    idx = findfirst(x->x.name == ":linux: build x86_64-linux-gnu", details_json.jobs)
+    idx = findfirst(x->x.name == ":linux: build x86_64-linux-gnu", details_json.records)
 
-    artifacts_url = "https://buildkite.com/" * details_json.jobs[idx].base_path * "/artifacts"
+    artifacts_url = "https://buildkite.com/" * details_json.records[idx].base_path * "/artifacts"
 
     return "https://buildkite.com" * (HTTP.get(artifacts_url).body |> JSON3.read)[1].url
 end
@@ -135,9 +136,9 @@ Pkg.add(url="https://github.com/JuliaCI/BaseBenchmarks.jl", io=devnull)
 
 using BaseBenchmarks
 BaseBenchmarks.load!("array")
-res = run(BaseBenchmarks.SUITE[["array", "index", ("sumvector_view", "SubArray{Int32, 2, Base.ReshapedArray{Int32, 2, SubArray{Int32, 3, Array{Int32, 3}, Tuple{Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}}, true}, Tuple{}}, Tuple{Base.Slice{Base.OneTo{Int64}}, UnitRange{Int64}}, true}")]])
+res = run(BaseBenchmarks.SUITE[["array", "index", ("sumvector", "SubArray{Float32, 2, Array{Float32, 3}, Tuple{Int64, Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}}, true}")]])
 
 minimum(res).time
 """
 # bisect_perf(bisect_command, "8f5b7ca12ad48c6d740e058312fc8cf2bbe67848", "5e9a32e7af2837e677e60543d4a15faa8d3a7297"; factor=2, buildkite_pipeline="julia-release-1-dot-11") |> println
-bisect_perf(bisect_command, "6d78a4ae91078cea43470f8cd6d895e0c9b3d5e7", "748775b5689deaa4acac7929e0a31a80d1c564f4"; factor=1.4) |> println
+bisect_perf(bisect_command, "4e3dc4ee59cc5f9383bc707f1ad3d1b4db28ce48", "0972a65ae616aa574b56fac147491eb74b591084"; factor=1.5) |> println
