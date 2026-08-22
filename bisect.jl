@@ -73,6 +73,9 @@ function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/
 end
 
 function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_pipeline="julia-ci")
+println("Bisecting between $start_sha and $end_sha with factor $factor and buildkite pipeline $buildkite_pipeline")
+    println("Bisect command: $bisect_command")
+
     commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
     pushfirst!(commit_range, start_sha)
 
