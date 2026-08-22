@@ -72,7 +72,7 @@ function run_commit(file, commit, buildkite_pipeline; download_cache="/home/rag/
     parse(Float64, result)
 end
 
-function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_pipeline="julia-master")
+function bisect_perf(bisect_command, start_sha, end_sha; factor=1.5, buildkite_pipeline="julia-ci")
     commit_range = map(x->x.sha, compare("JuliaLang/julia", start_sha, end_sha).commits)
     pushfirst!(commit_range, start_sha)
 
